@@ -37,7 +37,7 @@ sql_girl_names = ''' create or replace table oscars.Girl_Names as
 
 sql_actor_name_count = ''' create or replace table oscars.Winning_Actors_Name_Count as
                         select w.fname, w.lname, w.year, w.category, g.name_count
-                        from oscars.Winning_Actresses_Beam w join oscars.Girl_Names g 
+                        from oscars.Winning_Actors_Beam w join oscars.Boy_Names g 
                         on w.fname = g.name and w.year = g.year
                        '''
 
