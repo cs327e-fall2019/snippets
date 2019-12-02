@@ -27,44 +27,44 @@ class NormalizeTakesFn(beam.DoFn):
     return [takes_record]
             
          
-PROJECT_ID = os.environ['PROJECT_ID']
+def run():
+  PROJECT_ID = 'cs327e-fa2019'
 
-# Project ID is required when using the BQ source
-options = {
-    'project': PROJECT_ID
-}
-opts = beam.pipeline.PipelineOptions(flags=[], **options)
+  # Project ID is required when using the BQ source
+  options = {
+      'project': PROJECT_ID
+  }
+  opts = beam.pipeline.PipelineOptions(flags=[], **options)
 
-p = beam.Pipeline('DirectRunner', options=opts)
+  p = beam.Pipeline('DirectRunner', options=opts)
 
-takes_sql = 'SELECT sid, cno, grade FROM college_modeled.Takes'
-class_sql = 'SELECT cno FROM college_modeled.Class'
+  takes_sql = 'SELECT sid, cno, grade FROM workflow_college_modeled.Takes'
+  class_sql = 'SELECT cno FROM workflow_college_modeled.Class'
 
-takes_pcoll = p | 'Read from BQ Takes' >> beam.io.Read(beam.io.BigQuerySource(query=takes_sql, use_standard_sql=True))
-class_pcoll = p | 'Read from BQ Class' >> beam.io.Read(beam.io.BigQuerySource(query=class_sql, use_standard_sql=True))
+  takes_pcoll = p | 'Read from BQ Takes' >> beam.io.Read(beam.io.BigQuerySource(query=takes_sql, use_standard_sql=True))
+  class_pcoll = p | 'Read from BQ Class' >> beam.io.Read(beam.io.BigQuerySource(query=class_sql, use_standard_sql=True))
 
-# write PCollections to log files
-takes_pcoll | 'Write log 1' >> WriteToText('takes_query_results.txt')
-class_pcoll | 'Write log 2' >> WriteToText('class_query_results.txt')
+  # write PCollections to log files
+  #takes_pcoll | 'Write log 1' >> WriteToText('takes_query_results.txt')
+  #class_pcoll | 'Write log 2' >> WriteToText('class_query_results.txt')
 
-# apply ParDo to check cno value's referential integrity 
-norm_takes_pcoll = takes_pcoll | 'Normalize Record' >> beam.ParDo(NormalizeTakesFn(), beam.pvalue.AsList(class_pcoll))
+  # apply ParDo to check cno value's referential integrity 
+  norm_takes_pcoll = takes_pcoll | 'Normalize Record' >> beam.ParDo(NormalizeTakesFn(), beam.pvalue.AsList(class_pcoll))
 
-# write PCollection to log file
-norm_takes_pcoll | 'Write log 3' >> WriteToText('norm_takes_pcoll.txt')
+  # write PCollection to log file
+  #norm_takes_pcoll | 'Write log 3' >> WriteToText('norm_takes_pcoll.txt')
 
-dataset_id = 'college_modeled'
-table_id = 'Takes_Beam'
-schema_id = 'sid:STRING,cno:STRING,grade:STRING'
+  dataset_id = 'workflow_college_modeled'
+  table_id = 'Takes_Beam'
+  schema_id = 'sid:STRING,cno:STRING,grade:STRING'
 
-# write PCollection to new BQ table
-norm_takes_pcoll | 'Write BQ table' >> beam.io.WriteToBigQuery(dataset=dataset_id, 
-                                            table=table_id, 
-                                            schema=schema_id,
-                                            project=PROJECT_ID,
-                                            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
-                                            write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
-                                            batch_size=int(100))
-result = p.run()
-result.wait_until_finish()
-
+  # write PCollection to new BQ table
+  norm_takes_pcoll | 'Write BQ table' >> beam.io.WriteToBigQuery(dataset=dataset_id, 
+                table=table_id, 
+                schema=schema_id,
+                project=PROJECT_ID,
+                create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+                write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
+                batch_size=int(100))
+  result = p.run()
+  result.wait_until_finish()

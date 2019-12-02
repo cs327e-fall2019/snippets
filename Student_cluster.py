@@ -1,4 +1,4 @@
-import os, datetime
+import os, datetime, logging
 import apache_beam as beam
 from apache_beam.io import ReadFromText
 from apache_beam.io import WriteToText
@@ -34,62 +34,67 @@ class DedupStudentRecordsFn(beam.DoFn):
      print('student_record: ' + str(student_record))
      return [student_record]  
            
-         
-PROJECT_ID = os.environ['PROJECT_ID']
-BUCKET = os.environ['BUCKET']
-DIR_PATH = BUCKET + '/output/' + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S') + '/'
+def run():         
+    PROJECT_ID = 'cs327e-fa2019'
+    BUCKET = 'gs://cs327e-beam-bucket'
+    DIR_PATH = BUCKET + '/output/' + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S') + '/'
 
-# run pipeline on Dataflow 
-options = {
-    'runner': 'DataflowRunner',
-    'job_name': 'transform-student',
-    'project': PROJECT_ID,
-    'temp_location': BUCKET + '/temp',
-    'staging_location': BUCKET + '/staging',
-    'machine_type': 'n1-standard-4', # machine types listed here: https://cloud.google.com/compute/docs/machine-types
-    'num_workers': 1
-}
-opts = beam.pipeline.PipelineOptions(flags=[], **options)
+    # run pipeline on Dataflow 
+    options = {
+        'runner': 'DataflowRunner',
+        'job_name': 'transform-student',
+        'project': PROJECT_ID,
+        'temp_location': BUCKET + '/temp',
+        'staging_location': BUCKET + '/staging',
+        'machine_type': 'n1-standard-4', # https://cloud.google.com/compute/docs/machine-types
+        'num_workers': 1
+    }
 
-p = beam.Pipeline('DataflowRunner', options=opts)
+    opts = beam.pipeline.PipelineOptions(flags=[], **options)
 
-sql = 'SELECT sid, fname, lname, dob FROM college_modeled.Student'
-bq_source = beam.io.BigQuerySource(query=sql, use_standard_sql=True)
+    p = beam.Pipeline('DataflowRunner', options=opts)
 
-query_results = p | 'Read from BigQuery' >> beam.io.Read(bq_source)
+    sql = 'SELECT sid, fname, lname, dob FROM college_workflow_modeled.Student'
+    bq_source = beam.io.BigQuerySource(query=sql, use_standard_sql=True)
 
-# write PCollection to log file
-query_results | 'Write log 1' >> WriteToText(DIR_PATH + 'query_results.txt')
+    query_results = p | 'Read from BigQuery' >> beam.io.Read(bq_source)
 
-# apply ParDo to format the student's date of birth  
-formatted_dob_pcoll = query_results | 'Format DOB' >> beam.ParDo(FormatDOBFn())
+    # write PCollection to log file
+    query_results | 'Write log 1' >> WriteToText(DIR_PATH + 'query_results.txt')
 
-# write PCollection to log file
-formatted_dob_pcoll | 'Write log 2' >> WriteToText(DIR_PATH + 'formatted_dob_pcoll.txt')
+    # apply ParDo to format the student's date of birth  
+    formatted_dob_pcoll = query_results | 'Format DOB' >> beam.ParDo(FormatDOBFn())
 
-# group students by sid
-grouped_student_pcoll = formatted_dob_pcoll | 'Group by sid' >> beam.GroupByKey()
+    # write PCollection to log file
+    formatted_dob_pcoll | 'Write log 2' >> WriteToText(DIR_PATH + 'formatted_dob_pcoll.txt')
 
-# write PCollection to log file
-grouped_student_pcoll | 'Write log 3' >> WriteToText(DIR_PATH + 'grouped_student_pcoll.txt')
+    # group students by sid
+    grouped_student_pcoll = formatted_dob_pcoll | 'Group by sid' >> beam.GroupByKey()
 
-# remove duplicate student records
-distinct_student_pcoll = grouped_student_pcoll | 'Dedup student records' >> beam.ParDo(DedupStudentRecordsFn())
+    # write PCollection to log file
+    grouped_student_pcoll | 'Write log 3' >> WriteToText(DIR_PATH + 'grouped_student_pcoll.txt')
 
-# write PCollection to log file
-distinct_student_pcoll | 'Write log 4' >> WriteToText(DIR_PATH + 'distinct_student_pcoll.txt')
+    # remove duplicate student records
+    distinct_student_pcoll = grouped_student_pcoll | 'Dedup student' >> beam.ParDo(DedupStudentRecordsFn())
 
-dataset_id = 'college_modeled'
-table_id = 'Student_Beam_DF'
-schema_id = 'sid:STRING,fname:STRING,lname:STRING,dob:DATE'
+    # write PCollection to log file
+    distinct_student_pcoll | 'Write log 4' >> WriteToText(DIR_PATH + 'distinct_student_pcoll.txt')
 
-# write PCollection to new BQ table
-distinct_student_pcoll | 'Write BQ table' >> beam.io.WriteToBigQuery(dataset=dataset_id, 
+    dataset_id = 'college_workflow_modeled'
+    table_id = 'Student_Beam_DF'
+    schema_id = 'sid:STRING,fname:STRING,lname:STRING,dob:DATE'
+
+    # write PCollection to new BQ table
+    distinct_student_pcoll | 'Write BQ table' >> beam.io.WriteToBigQuery(dataset=dataset_id, 
                                                 table=table_id, 
                                                 schema=schema_id,
                                                 project=PROJECT_ID,
-                                                create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
-                                                write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
+                                            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+                                            write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
                                                 batch_size=int(100))
-result = p.run()
-result.wait_until_finish()
+    result = p.run()
+    result.wait_until_finish()
+
+if __name__ == '__main__':
+  logging.getLogger().setLevel(logging.INFO)
+  run()
