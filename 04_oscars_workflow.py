@@ -77,6 +77,16 @@ with models.DAG(
     parse_actress_names = BashOperator(
             task_id='parse_actress_names',
             bash_command='python /home/jupyter/airflow/dags/oscars_Winning_Actresses.py')
+    
+    actor_name_count = BashOperator(
+            task_id='actor_name_count',
+            bash_command=bq_query_start + "'" + sql_actor_name_count + "'", 
+            trigger_rule='all_success')
+    
+    actress_name_count = BashOperator(
+            task_id='actress_name_count',
+            bash_command=bq_query_start + "'" + sql_actress_name_count + "'", 
+            trigger_rule='all_success')
         
-    winning_actors >> boy_names >> parse_actor_names >> sql_actor_name_count
-    winning_actresses >> girl_names >> parse_actress_names >> sql_actress_name_count
+    winning_actors >> boy_names >> parse_actor_names >> actor_name_count
+    winning_actresses >> girl_names >> parse_actress_names >> actress_name_count
